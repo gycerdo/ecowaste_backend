@@ -445,11 +445,5 @@ const completeBooking = async (req, res) => {
     }
 };
 
-module.exports = {
-    getCenters,
-    createBooking,
-    getMyBookings,
-    getBookingById,
-    cancelBooking,
-    completeBooking,
-};
+module.exports = { getCenters, createBooking, getMyBookings, getBookingById, cancelBooking, completeBooking };;
+
