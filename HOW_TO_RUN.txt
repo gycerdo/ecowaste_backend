@@ -1,0 +1,43 @@
+================================================================
+  EcoWaste – Civic Intelligence
+  Complete Project Package
+================================================================
+
+FOLDER STRUCTURE:
+  EcoWaste/            ← Flutter Frontend (created by flutter create EcoWaste)
+  ecowaste_backend/    ← Node.js Backend
+  ecowaste_schema.sql  ← Neon PostgreSQL Database
+
+================================================================
+STEP 1: DATABASE (Neon Console)
+================================================================
+1. Go to https://console.neon.tech
+2. Click "SQL Editor"
+3. Paste the contents of ecowaste_schema.sql
+4. Click Run
+
+================================================================
+STEP 2: BACKEND (Node.js)
+================================================================
+  cd ecowaste_backend
+  npm install
+  copy .env.example  .env        (Windows)
+  # Edit .env: add your DATABASE_URL and JWT_SECRET
+  npm start
+
+================================================================
+STEP 3: FLUTTER FRONTEND
+================================================================
+  cd EcoWaste
+  flutter pub get
+  # Edit lib/services/api_service.dart
+  # Change _baseUrl to your backend server URL
+  flutter run
+
+================================================================
+COMMANDS (run in order):
+================================================================
+  cd ecowaste_backend && npm install && npm start
+  cd ../EcoWaste && flutter pub get && flutter run
+
+================================================================
