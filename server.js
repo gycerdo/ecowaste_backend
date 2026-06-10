@@ -116,35 +116,35 @@ app.get('/health', (_req, res) => {
 app.post('/api/test-sms', async (req, res) => {
   console.log('📱 Testing SMS endpoint...');
   console.log('Request body:', req.body);
-  
+
   try {
     const { phone, message, otp, name } = req.body;
-    
+
     if (!phone) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Phone number is required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Phone number is required'
       });
     }
-    
+
     let finalMessage = message;
     if (otp) {
       finalMessage = `Dear ${name || 'Customer'}, your EcoWaste verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`;
     }
-    
+
     const result = await sendSMS(phone, finalMessage || 'Test message from EcoWaste API');
-    
+
     console.log('SMS result:', result);
-    res.json({ 
-      success: result.success, 
+    res.json({
+      success: result.success,
       result: result.data,
       error: result.error,
       sentTo: phone
     });
   } catch (error) {
     console.error('SMS test error:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
@@ -155,38 +155,38 @@ app.post('/api/test-sms', async (req, res) => {
 app.post('/api/test-email', async (req, res) => {
   console.log('📧 Testing Email endpoint...');
   console.log('Request body:', req.body);
-  
+
   try {
     const { email, subject, message, name } = req.body;
-    
+
     if (!email) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email address is required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Email address is required'
       });
     }
-    
+
     let finalSubject = subject || 'EcoWaste Test Email';
     let finalMessage = message || 'This is a test email from EcoWaste API. Your email service is working correctly! 🌿';
-    
+
     if (name) {
       finalMessage = `Hello ${name},\n\n${finalMessage}`;
     }
-    
+
     const result = await sendEmail(email, finalSubject, finalMessage);
-    
+
     console.log('Email result:', result);
-    res.json({ 
-      success: result.success, 
+    res.json({
+      success: result.success,
       messageId: result.messageId,
       error: result.error,
       sentTo: email
     });
   } catch (error) {
     console.error('Email test error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -197,7 +197,7 @@ app.get('/api/test-sms-config', (req, res) => {
     mambo_base_url: process.env.MAMBO_BASE_URL || 'NOT SET',
     mambo_sender_id: process.env.MAMBO_SENDER_ID || 'NOT SET',
     mambo_token_exists: !!process.env.MAMBO_TOKEN,
-    mambo_token_preview: process.env.MAMBO_TOKEN ? 
+    mambo_token_preview: process.env.MAMBO_TOKEN ?
       `${process.env.MAMBO_TOKEN.substring(0, 10)}...` : 'NOT SET',
     smtp_host: process.env.SMTP_HOST || 'NOT SET',
     smtp_user: process.env.SMTP_USER || 'NOT SET',
@@ -205,7 +205,7 @@ app.get('/api/test-sms-config', (req, res) => {
     smtp_from_name: process.env.SMTP_FROM_NAME || 'NOT SET',
     node_env: process.env.NODE_ENV || 'development'
   };
-  
+
   res.json({
     success: true,
     config: config,
@@ -217,10 +217,10 @@ app.get('/api/test-sms-config', (req, res) => {
 // Test combined notification endpoint
 app.post('/api/test-notification', async (req, res) => {
   console.log('🔔 Testing combined notification...');
-  
+
   try {
     const { phone, email, name, type } = req.body;
-    
+
     const result = await sendNotification({
       phone: phone,
       email: email,
@@ -228,32 +228,33 @@ app.post('/api/test-notification', async (req, res) => {
       type: type || 'welcome',
       otp: type === 'otp' ? '123456' : null
     });
-    
+
     res.json({
       success: true,
       results: result
     });
   } catch (error) {
     console.error('Notification test error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
 
 // ════════════════════════════════════════════════════════════════
-// ROUTES
+// ROUTES REGISTER
 // ════════════════════════════════════════════════════════════════
 app.use('/api/auth', authLimiter, authRoutes);
+
+// AI verify rate limit mounted BEFORE the main fallback waste router definition
+app.use('/api/waste/verify-ai', aiLimiter);
 app.use('/api/waste', wasteRoutes);
+
 app.use('/api/map', mapRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/bookings', bookingRoutes);
-
-// AI verify endpoint gets its own tighter rate limit
-app.use('/api/waste/verify-ai', aiLimiter);
 
 // ════════════════════════════════════════════════════════════════
 // 404 HANDLER
@@ -376,7 +377,7 @@ server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`    GET    /`);
   console.log(`    GET    /health`);
   console.log(`${line}\n`);
-  
+
   // Log configuration status
   console.log('📱 SMS Service:', process.env.MAMBO_TOKEN ? '✅ Configured' : '❌ Not configured');
   console.log('📧 Email Service:', process.env.SMTP_USER ? '✅ Configured' : '❌ Not configured');
