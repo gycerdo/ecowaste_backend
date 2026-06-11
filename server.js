@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const os = require('os');
@@ -20,6 +20,10 @@ const { sendEmail, sendWelcomeEmail, sendOtpEmail, sendBookingConfirmation } = r
 const { sendNotification } = require('./services/notificationService');
 
 const app = express();
+
+// Set trust proxy to allow express-rate-limit to see real client IPs on Render
+app.set('trust proxy', 1); 
+
 const PORT = process.env.PORT || 3000;
 
 // ════════════════════════════════════════════════════════════════
