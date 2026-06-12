@@ -2,7 +2,7 @@ const axios = require('axios');
 
 /**
  * SMS Service - Supports Mambo SMS, Africa's Talking, and Dev Mode Fallback
- * Version: 2.0.0
+ * Version: 2.1.0 (Fixed for Mambo SMS v1)
  */
 
 // Configuration
@@ -13,13 +13,7 @@ const SMS_CONFIG = {
         token: process.env.MAMBO_TOKEN,
         senderId: process.env.MAMBO_SENDER_ID || 'SIMU VOTE',
         enabled: process.env.ENABLE_MAMBO !== 'false',
-        endpoints: [
-            '/api/send-sms',
-            '/api/sendsms',
-            '/api/v1/send',
-            '/api/v2/send',
-            '/api/sms/send'
-        ]
+        endpoint: '/api/v1/sms/single' // Endpoint sahihi ya Mambo SMS v1
     },
 
     // Africa's Talking (Fallback)
@@ -41,36 +35,28 @@ const SMS_CONFIG = {
 };
 
 /**
- * Format phone number to international format (Tanzania: 255XXXXXXXXX)
+ * Format phone number to local format expected by Mambo SMS (0XXXXXXXXX)
  * @param {string} phone - Raw phone number
- * @returns {string} Formatted phone number
+ * @returns {string} Formatted phone number starting with 0
  */
 function formatPhoneNumber(phone) {
     if (!phone) return null;
 
-    // Remove all whitespace and special characters
-    let cleaned = phone.toString().trim().replace(/\s/g, '').replace(/[()-]/g, '');
+    // Ondoa nafasi na alama zote maalum
+    let cleaned = phone.toString().trim().replace(/\s/g, '').replace(/[()-]/g, '').replace('+', '');
 
-    // Remove leading '+'
-    if (cleaned.startsWith('+')) {
-        cleaned = cleaned.substring(1);
+    // Kama inaanza na kodi ya nchi 255, iondoe na uweke 0
+    if (cleaned.startsWith('255')) {
+        cleaned = '0' + cleaned.substring(3);
+    }
+    // Kama haianzi na 0 lakini ina herufi 9 (mfano: 719242796), weka 0 mbele
+    else if (!cleaned.startsWith('0') && (cleaned.startsWith('7') || cleaned.startsWith('6') || cleaned.startsWith('default'))) {
+        cleaned = '0' + cleaned;
     }
 
-    // Handle Tanzanian numbers
-    if (cleaned.startsWith('0')) {
-        // Convert 0719xxxxxx to 255719xxxxxx
-        cleaned = '255' + cleaned.substring(1);
-    } else if (cleaned.length === 9 && cleaned.startsWith('7')) {
-        // Convert 719xxxxxx to 255719xxxxxx
-        cleaned = '255' + cleaned;
-    } else if (cleaned.length === 12 && !cleaned.startsWith('255')) {
-        // Invalid format
-        throw new Error(`Invalid phone number format: ${phone}`);
-    }
-
-    // Validate Tanzanian format
-    if (!cleaned.startsWith('255') || cleaned.length !== 12) {
-        console.warn(`⚠️ Warning: ${phone} formatted as ${cleaned} may not be valid Tanzanian number`);
+    // Uhakiki wa urefu wa namba ya kawaida ya simu (Tanzania: tarakimu 10)
+    if (cleaned.length !== 10 || !cleaned.startsWith('0')) {
+        console.warn(`⚠️ Warning: ${phone} formatted as ${cleaned} may not be valid local Tanzanian number`);
     }
 
     return cleaned;
@@ -90,72 +76,50 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  */
 async function sendMamboSMS(phone, message) {
     const formattedPhone = formatPhoneNumber(phone);
+    const apiUrl = `${SMS_CONFIG.mambo.baseURL}${SMS_CONFIG.mambo.endpoint}`;
 
-    for (const endpoint of SMS_CONFIG.mambo.endpoints) {
-        try {
-            const apiUrl = `${SMS_CONFIG.mambo.baseURL}${endpoint}`;
+    try {
+        console.log(`📱 Sending Mambo SMS to: ${formattedPhone} via ${SMS_CONFIG.mambo.endpoint}`);
 
-            console.log(`📱 Trying Mambo endpoint: ${endpoint}`);
+        // Payload rasmi kulingana na v1 API documentation yao
+        const body = {
+            sender_id: SMS_CONFIG.mambo.senderId,
+            mobile: formattedPhone, // KEY RASMI NI 'mobile'
+            message: message
+        };
 
-            // Try different request formats
-            const requestBodies = [
-                // Format 1: recipient, sender_id, message
-                {
-                    recipient: formattedPhone,
-                    sender_id: SMS_CONFIG.mambo.senderId,
-                    message: message
-                },
-                // Format 2: to, from, text
-                {
-                    to: formattedPhone,
-                    from: SMS_CONFIG.mambo.senderId,
-                    text: message
-                },
-                // Format 3: phone, message
-                {
-                    phone: formattedPhone,
-                    message: message
-                }
-            ];
+        const response = await axios.post(apiUrl, body, {
+            headers: {
+                'Authorization': `Bearer ${SMS_CONFIG.mambo.token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            timeout: SMS_CONFIG.timeout
+        });
 
-            for (const body of requestBodies) {
-                try {
-                    const response = await axios.post(apiUrl, body, {
-                        headers: {
-                            'Authorization': `Bearer ${SMS_CONFIG.mambo.token}`,
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        timeout: SMS_CONFIG.timeout
-                    });
+        // Kuangalia kama imefanikiwa kulingana na majibu ya Mambo API
+        if (response.data &&
+            (response.data.status === 'success' ||
+                response.data.success === true ||
+                response.status === 200)) {
 
-                    // Check if successful
-                    if (response.data &&
-                        (response.data.status === 'success' ||
-                            response.data.success === true ||
-                            response.status === 200)) {
-                        console.log(`✅ Mambo SMS sent via ${endpoint}`);
-                        return {
-                            success: true,
-                            provider: 'mambo',
-                            endpoint: endpoint,
-                            messageId: response.data.message_id || response.data.id,
-                            recipient: formattedPhone
-                        };
-                    }
-                } catch (bodyError) {
-                    // Try next body format
-                    continue;
-                }
-            }
-        } catch (error) {
-            // Try next endpoint
-            console.log(`⚠️ Mambo endpoint ${endpoint} failed:`, error.message);
-            continue;
+            console.log(`✅ Mambo SMS sent successfully`);
+            return {
+                success: true,
+                provider: 'mambo',
+                endpoint: SMS_CONFIG.mambo.endpoint,
+                messageId: response.data.message_id || response.data.id,
+                recipient: formattedPhone
+            };
         }
-    }
 
-    return { success: false, provider: 'mambo', error: 'All Mambo endpoints failed' };
+        return { success: false, provider: 'mambo', error: JSON.stringify(response.data) };
+
+    } catch (error) {
+        const errorResponse = error.response ? JSON.stringify(error.response.data) : error.message;
+        console.log(`⚠️ Mambo SMS execution failed:`, errorResponse);
+        return { success: false, provider: 'mambo', error: errorResponse };
+    }
 }
 
 /**
@@ -170,10 +134,9 @@ async function sendAfricasTalkingSMS(phone, message) {
     }
 
     try {
-        const formattedPhone = formatPhoneNumber(phone);
-
-        // Africa's Talking uses different format (no + or 0)
-        const atPhone = formattedPhone.startsWith('255') ? formattedPhone : '255' + formattedPhone;
+        const localPhone = formatPhoneNumber(phone);
+        // Africa's talking inahitaji 255 mbele badala ya 0
+        const atPhone = '255' + localPhone.substring(1);
 
         const response = await axios.post(
             'https://api.africastalking.com/version1/messaging',
@@ -229,7 +192,6 @@ async function sendDevModeSMS(phone, message) {
     console.log(`💬 Message: ${message}`);
     console.log('═'.repeat(60) + '\n');
 
-    // Extract OTP if present (for easier testing)
     const otpMatch = message.match(/\b\d{6}\b/);
     if (otpMatch && SMS_CONFIG.logOtp) {
         console.log(`🔐 🔐 🔐 OTP CODE: ${otpMatch[0]} 🔐 🔐 🔐\n`);
@@ -257,12 +219,10 @@ async function sendSMS(phone, message, options = {}) {
         throw new Error('Missing required parameters: phone or message');
     }
 
-    // Dev mode - just log to console (no actual SMS)
     if (SMS_CONFIG.devMode && options.devMode !== false) {
         return await sendDevModeSMS(phone, message);
     }
 
-    // Production mode - try actual providers
     let lastError = null;
 
     // Try Mambo first (primary provider)
@@ -284,7 +244,6 @@ async function sendSMS(phone, message, options = {}) {
         lastError = result.error;
     }
 
-    // If all providers fail and in dev mode, fallback to dev mode
     if (SMS_CONFIG.devMode) {
         console.log(`⚠️ All SMS providers failed, falling back to dev mode`);
         return await sendDevModeSMS(phone, message);
@@ -299,10 +258,6 @@ async function sendSMS(phone, message, options = {}) {
 
 /**
  * Send OTP verification code via SMS
- * @param {string} phone - Recipient phone number
- * @param {string} otp - 6-digit OTP code
- * @param {string} name - User's name
- * @returns {Promise<Object>}
  */
 async function sendOtpSMS(phone, otp, name = 'Customer') {
     const expiresIn = 10;
@@ -310,7 +265,6 @@ async function sendOtpSMS(phone, otp, name = 'Customer') {
 
     const result = await sendSMS(phone, message);
 
-    // In dev mode, return OTP for auto-fill
     if (result.provider === 'dev-mode' && result.otp) {
         result.devOtp = result.otp;
     }
@@ -320,9 +274,6 @@ async function sendOtpSMS(phone, otp, name = 'Customer') {
 
 /**
  * Send welcome message via SMS
- * @param {string} phone - Recipient phone number
- * @param {string} name - User's name
- * @returns {Promise<Object>}
  */
 async function sendWelcomeSMS(phone, name) {
     const message = `🌿 Welcome ${name} to EcoWaste! 🌍 Book waste collection, find recycling centers & earn points. Together for a cleaner Tanzania! Download app: https://ecowaste.app`;
@@ -331,10 +282,6 @@ async function sendWelcomeSMS(phone, name) {
 
 /**
  * Send booking confirmation via SMS
- * @param {string} phone - Recipient phone number
- * @param {string} name - User's name
- * @param {Object} bookingDetails - Booking information
- * @returns {Promise<Object>}
  */
 async function sendBookingSMS(phone, name, bookingDetails) {
     const message = `✅ ${name}, your booking at ${bookingDetails.center_name} on ${bookingDetails.booking_date} at ${bookingDetails.time_slot} is confirmed. Booking ID: #${bookingDetails.id}. Show this SMS at the center. Thank you for recycling! 🌍 EcoWaste`;
@@ -343,10 +290,6 @@ async function sendBookingSMS(phone, name, bookingDetails) {
 
 /**
  * Send booking reminder via SMS (24 hours before)
- * @param {string} phone - Recipient phone number
- * @param {string} name - User's name
- * @param {Object} bookingDetails - Booking information
- * @returns {Promise<Object>}
  */
 async function sendBookingReminderSMS(phone, name, bookingDetails) {
     const message = `⏰ Reminder ${name}! Your waste collection at ${bookingDetails.center_name} is tomorrow (${bookingDetails.booking_date}) at ${bookingDetails.time_slot}. Please arrive on time. EcoWaste 🌿`;
@@ -355,11 +298,6 @@ async function sendBookingReminderSMS(phone, name, bookingDetails) {
 
 /**
  * Send booking cancellation notification via SMS
- * @param {string} phone - Recipient phone number
- * @param {string} name - User's name
- * @param {Object} bookingDetails - Booking information
- * @param {string} reason - Cancellation reason
- * @returns {Promise<Object>}
  */
 async function sendCancellationSMS(phone, name, bookingDetails, reason = '') {
     const message = `⚠️ ${name}, your booking at ${bookingDetails.center_name} on ${bookingDetails.booking_date} has been CANCELLED. Reason: ${reason || 'Not specified'}. To rebook, use the app. EcoWaste`;
@@ -368,11 +306,6 @@ async function sendCancellationSMS(phone, name, bookingDetails, reason = '') {
 
 /**
  * Send points earned notification via SMS
- * @param {string} phone - Recipient phone number
- * @param {string} name - User's name
- * @param {number} points - Points earned
- * @param {string} activity - Activity description
- * @returns {Promise<Object>}
  */
 async function sendPointsEarnedSMS(phone, name, points, activity) {
     const message = `🎉 Congratulations ${name}! You've earned ${points} points for ${activity}. Keep recycling and earn more rewards! EcoWaste 🌟`;
@@ -381,10 +314,6 @@ async function sendPointsEarnedSMS(phone, name, points, activity) {
 
 /**
  * Send bulk SMS to multiple recipients
- * @param {Array<string>} phones - List of phone numbers
- * @param {string} message - SMS content
- * @param {number} delayMs - Delay between messages (ms)
- * @returns {Promise<Array<Object>>}
  */
 async function sendBulkSMS(phones, message, delayMs = 500) {
     const results = [];
@@ -396,7 +325,6 @@ async function sendBulkSMS(phones, message, delayMs = 500) {
         const result = await sendSMS(phone, message);
         results.push({ phone, ...result });
 
-        // Delay to avoid rate limiting
         if (i < phones.length - 1 && delayMs > 0) {
             await sleep(delayMs);
         }
@@ -409,11 +337,9 @@ async function sendBulkSMS(phones, message, delayMs = 500) {
 }
 
 /**
- * Check SMS balance (if provider supports)
- * @returns {Promise<Object>} Balance information
+ * Check SMS balance
  */
 async function checkSMSBalance() {
-    // Try Mambo balance endpoint
     try {
         const response = await axios.get(
             `${SMS_CONFIG.mambo.baseURL}/api/balance`,
@@ -446,7 +372,6 @@ async function checkSMSBalance() {
 
 /**
  * Test SMS configuration
- * @returns {Object} Configuration status
  */
 function getSMSStatus() {
     return {
@@ -473,7 +398,6 @@ function getSMSStatus() {
 }
 
 module.exports = {
-    // Main functions
     sendSMS,
     sendOtpSMS,
     sendWelcomeSMS,
@@ -482,13 +406,9 @@ module.exports = {
     sendCancellationSMS,
     sendPointsEarnedSMS,
     sendBulkSMS,
-
-    // Utility functions
     formatPhoneNumber,
     checkSMSBalance,
     getSMSStatus,
-
-    // Individual provider functions (for testing)
     sendMamboSMS,
     sendAfricasTalkingSMS,
     sendDevModeSMS
