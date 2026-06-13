@@ -18,6 +18,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final String _backendUrl =
       "https://ecowaste-backend-v8i9.onrender.com/api/auth";
 
+  @override
+  void dispose() {
+    _usernameOrEmailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -34,13 +41,14 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       final data = jsonDecode(response.body);
+
+      if (!mounted) return;
       setState(() => _isLoading = false);
 
       if (response.statusCode == 200) {
         _showSnackBar("Karibu tena kwenye mfumo wa EcoWaste!");
         Navigator.pushReplacementNamed(context, '/home');
       } else if (response.statusCode == 403 && data['is_verified'] == false) {
-        // HAPA NDIPO TUNAPODAKA AKAUNTI AMBAZO HAZIJAWA VERIFIED KWANZA
         _showSnackBar("Namba yako haijathibitishwa bado. Tunatuma OTP...",
             isError: true);
         _triggerOtpRequest(
@@ -50,6 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
             data['message'] ?? 'Mchanganyiko wa data zako sio sahihi');
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       _showSnackBar(e.toString().replaceAll("Exception:", ""), isError: true);
     }
@@ -62,6 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"phone": phone}),
       );
+      if (!mounted) return;
       _showOtpBottomSheet(phone);
     } catch (e) {
       _showSnackBar("Imeshindwa kurun mtambo wa OTP", isError: true);
@@ -136,9 +146,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               );
 
                               if (resp.statusCode == 200) {
+                                if (!mounted) return;
                                 Navigator.pop(context);
                                 _showSnackBar(
                                     "Uhakiki Umefanikiwa! Sasa unaweza kuingia.");
+                                Navigator.pushReplacementNamed(
+                                    context, '/home');
                               } else {
                                 final resData = jsonDecode(resp.body);
                                 throw Exception(
@@ -237,7 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 15),
                     TextButton(
                       onPressed: () =>
-                          Navigator.pushNamed(context, '/register'),
+                          Navigator.pushReplacementNamed(context, '/register'),
                       child: const Text("Hauna akaunti bado? Jisajili hapa",
                           style: TextStyle(color: Colors.green, fontSize: 16)),
                     )
